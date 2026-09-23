@@ -1,0 +1,199 @@
+---
+title: "Limpieza de la base de datos"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+# 1. Paquetes
+
+```{r paquetes}
+# Instalar solo una vez (en la consola, no en el Rmd):
+# install.packages(c("tidyverse", "janitor", "readxl", "skimr", "naniar"))
+
+library(tidyverse)  # dplyr, tidyr, readr, stringr, ggplot2...
+library(janitor)    # clean_names(), get_dupes(), tabyl()
+library(readxl)     # leer archivos de Excel
+library(skimr)      # resumen rápido de la base
+library(naniar)     # análisis de valores faltantes
+```
+
+# 2. Cargar los datos
+
+Descomenta la línea que corresponda al formato de tu archivo.
+
+```{r cargar}
+# datos <- read_csv("datos/mi_base.csv")
+# datos <- read_csv2("datos/mi_base.csv")            # CSV separado por ";" y decimales con ","
+# datos <- read_excel("datos/mi_base.xlsx", sheet = 1)
+# datos <- haven::read_dta("datos/mi_base.dta")      # Stata
+# datos <- haven::read_sav("datos/mi_base.sav")      # SPSS
+
+# Base de ejemplo para que el documento compile:
+datos <- tibble(
+  `ID Hogar`     = c(1, 2, 2, 3, 4, 5, 6),
+  `Ingreso`      = c("1.200.000", "850000", "850000", "NA", "2500000", "-99", "3000000"),
+  `Edad`         = c(34, 45, 45, 200, 29, NA, 51),
+  `Sexo`         = c("M", "f", "f", "Femenino", "masculino", "F", " M "),
+  `Educacion`    = c("Primaria", "secundaria", "secundaria", "Universitaria", NA, "Secundaria", "universitaria"),
+  `Fecha`        = c("2024-01-15", "2024-02-20", "2024-02-20", "2024-03-01", "2024-03-15", "2024-04-01", "2024-05-10")
+)
+```
+
+# 3. Explorar la base
+
+```{r explorar}
+glimpse(datos)        # tipos de variables y primeras observaciones
+dim(datos)            # filas y columnas
+summary(datos)        # estadísticas básicas
+skim(datos)           # resumen completo (incluye % de NA)
+```
+
+# 4. Limpiar nombres de columnas
+
+Pasa los nombres a minúsculas, sin tildes, espacios ni símbolos.
+
+```{r nombres}
+datos <- datos %>% clean_names()
+names(datos)
+
+# Renombrar manualmente si hace falta:
+datos <- datos %>% rename(id = id_hogar)
+```
+
+# 5. Duplicados
+
+```{r duplicados}
+# Ver filas duplicadas
+datos %>% get_dupes()
+
+# Eliminar filas completamente duplicadas
+datos <- datos %>% distinct()
+
+# Eliminar duplicados según una llave (se queda con la primera aparición)
+datos <- datos %>% distinct(id, .keep_all = TRUE)
+```
+
+# 6. Corregir tipos de variables
+
+```{r tipos}
+datos <- datos %>%
+  mutate(
+    # Texto a número: quitar puntos de miles y símbolos antes de convertir
+    ingreso = parse_number(ingreso, locale = locale(decimal_mark = ",", grouping_mark = ".")),
+    fecha   = as.Date(fecha),
+    id      = as.character(id)
+  )
+
+glimpse(datos)
+```
+
+# 7. Estandarizar variables de texto / categóricas
+
+```{r categoricas}
+datos <- datos %>%
+  mutate(
+    sexo = str_trim(str_to_lower(sexo)),
+    sexo = case_when(
+      sexo %in% c("m", "masculino", "hombre") ~ "Hombre",
+      sexo %in% c("f", "femenino", "mujer")   ~ "Mujer",
+      TRUE ~ NA_character_
+    ),
+    educacion = str_to_title(educacion),
+    educacion = factor(educacion,
+                       levels = c("Primaria", "Secundaria", "Universitaria"),
+                       ordered = TRUE)
+  )
+
+# Revisar que las categorías quedaron bien
+datos %>% tabyl(sexo)
+datos %>% tabyl(educacion)
+```
+
+# 8. Valores faltantes (NA)
+
+```{r faltantes}
+# Códigos que en realidad significan "sin dato" (-99, 999, "NS/NR", etc.)
+datos <- datos %>%
+  mutate(ingreso = na_if(ingreso, -99))
+
+# Cuántos NA hay por variable
+colSums(is.na(datos))
+miss_var_summary(datos)
+vis_miss(datos)             # gráfico de faltantes
+
+# Opción A: eliminar filas con NA en variables clave del modelo
+datos_modelo <- datos %>% drop_na(ingreso, edad)
+
+# Opción B: imputar (ej. con la mediana) -- documenta siempre esta decisión
+datos_imputados <- datos %>%
+  mutate(edad = if_else(is.na(edad), median(edad, na.rm = TRUE), edad))
+```
+
+# 9. Valores atípicos e imposibles
+
+```{r atipicos}
+# Valores imposibles -> NA
+datos <- datos %>%
+  mutate(edad = if_else(edad < 0 | edad > 110, NA_real_, edad))
+
+# Boxplot para detectar atípicos
+ggplot(datos, aes(y = ingreso)) +
+  geom_boxplot() +
+  labs(title = "Distribución del ingreso", y = "Ingreso")
+
+# Regla del rango intercuartílico (IQR)
+q1  <- quantile(datos$ingreso, 0.25, na.rm = TRUE)
+q3  <- quantile(datos$ingreso, 0.75, na.rm = TRUE)
+iqr <- q3 - q1
+
+datos %>% filter(ingreso < q1 - 1.5 * iqr | ingreso > q3 + 1.5 * iqr)
+```
+
+# 10. Crear variables para el modelo econométrico
+
+```{r nuevas_variables}
+datos <- datos %>%
+  mutate(
+    log_ingreso = log(ingreso),                 # modelos log-lin / log-log
+    edad2       = edad^2,                       # efecto cuadrático de la edad
+    mujer       = if_else(sexo == "Mujer", 1, 0),  # dummy
+    anio        = lubridate::year(fecha),
+    grupo_edad  = cut(edad,
+                      breaks = c(0, 30, 50, Inf),
+                      labels = c("Joven", "Adulto", "Mayor"))
+  )
+```
+
+# 11. Filtrar y seleccionar
+
+```{r filtrar}
+datos_final <- datos %>%
+  filter(!is.na(ingreso), !is.na(edad)) %>%
+  select(id, ingreso, log_ingreso, edad, edad2, mujer, educacion)
+
+datos_final
+```
+
+# 12. Verificación final y exportar
+
+```{r exportar}
+glimpse(datos_final)
+colSums(is.na(datos_final))
+
+# write_csv(datos_final, "datos/base_limpia.csv")
+# saveRDS(datos_final, "datos/base_limpia.rds")   # conserva tipos y factores
+```
+
+# 13. (Opcional) Estimación con la base limpia
+
+```{r modelo, eval=FALSE}
+modelo <- lm(log_ingreso ~ edad + edad2 + mujer + educacion, data = datos_final)
+summary(modelo)
+```
