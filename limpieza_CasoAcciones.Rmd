@@ -1,0 +1,168 @@
+---
+title: "Limpieza de la base CasoAccionesBD"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+# 1. Paquetes
+
+```{r paquetes}
+# Instalar solo una vez (en la consola):
+# install.packages(c("readr", "dplyr", "tidyr", "ggplot2"))
+
+library(readr)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+```
+
+# 2. Cargar los datos
+
+El archivo trae **dos tablas en la misma hoja**:
+
+* Filas 1–28: las acciones **con** precio `Y` (sirven para estimar el modelo).
+* Después, 8 filas vacías y un segundo encabezado.
+* Al final, 5 acciones (K, B, C, T, V) **sin** `Y` (sirven para predecir).
+
+Por eso se lee todo como texto y luego se separa.
+
+```{r cargar}
+crudo <- read_csv("CasoAccionesBD.csv",
+                  col_types = cols(.default = col_character()))
+
+dim(crudo)
+head(crudo)
+tail(crudo, 14)
+```
+
+# 3. Nombres de columnas
+
+```{r nombres}
+crudo <- crudo %>% rename_with(tolower)   # Y -> y, X1 -> x1, ...
+names(crudo)
+```
+
+# 4. Eliminar filas vacías
+
+```{r filas_vacias}
+# Una fila es vacía si todas sus columnas son NA
+crudo <- crudo %>% filter(if_any(everything(), ~ !is.na(.x)))
+
+nrow(crudo)   # quedan 28 + 1 encabezado repetido + 5 = 34
+```
+
+# 5. Separar la base de estimación y la de predicción
+
+```{r separar}
+# Fila donde aparece el encabezado repetido ("Accion")
+fila_encabezado <- which(crudo$accion == "Accion")
+fila_encabezado
+
+estimacion <- crudo %>% slice(1:(fila_encabezado - 1))
+prediccion <- crudo %>% slice((fila_encabezado + 1):n()) %>% select(-y)
+
+nrow(estimacion)   # 28
+nrow(prediccion)   # 5
+```
+
+# 6. Convertir a numérico
+
+```{r tipos}
+estimacion <- estimacion %>% mutate(across(y:x8, as.numeric))
+prediccion <- prediccion %>% mutate(across(x1:x8, as.numeric))
+
+glimpse(estimacion)
+glimpse(prediccion)
+```
+
+# 7. Revisar faltantes y duplicados
+
+```{r faltantes}
+colSums(is.na(estimacion))
+colSums(is.na(prediccion))
+
+# ¿Hay acciones repetidas?
+sum(duplicated(estimacion$accion))
+sum(duplicated(estimacion[, -1]))   # filas con los mismos valores
+```
+
+# 8. Revisar las variables dummy (X7 y X8)
+
+Solo deben tomar los valores 0 y 1.
+
+```{r dummies}
+table(estimacion$x7)
+table(estimacion$x8)
+table(prediccion$x7)
+table(prediccion$x8)
+```
+
+# 9. Estadísticas descriptivas
+
+```{r descriptivas}
+summary(estimacion)
+
+estimacion %>%
+  select(y:x6) %>%
+  pivot_longer(everything(), names_to = "variable", values_to = "valor") %>%
+  group_by(variable) %>%
+  summarise(media   = mean(valor),
+            mediana = median(valor),
+            desv    = sd(valor),
+            min     = min(valor),
+            max     = max(valor))
+```
+
+# 10. Valores atípicos
+
+```{r atipicos_grafico}
+estimacion %>%
+  select(y:x6) %>%
+  pivot_longer(everything(), names_to = "variable", values_to = "valor") %>%
+  ggplot(aes(x = "", y = valor)) +
+  geom_boxplot() +
+  facet_wrap(~ variable, scales = "free_y") +
+  labs(x = NULL, y = NULL, title = "Boxplot de cada variable")
+```
+
+```{r atipicos_tabla}
+# Regla del rango intercuartílico: fuera de [Q1 - 1.5*IQR, Q3 + 1.5*IQR]
+es_atipico <- function(x) {
+  q <- quantile(x, c(0.25, 0.75))
+  x < q[1] - 1.5 * IQR(x) | x > q[2] + 1.5 * IQR(x)
+}
+
+estimacion %>%
+  select(accion, y:x6) %>%
+  pivot_longer(-accion, names_to = "variable", values_to = "valor") %>%
+  group_by(variable) %>%
+  filter(es_atipico(valor)) %>%
+  arrange(variable)
+```
+
+No se eliminan observaciones solo por ser atípicas: con 28 datos cada una
+pesa mucho. Se reportan y se revisa su influencia después de estimar el
+modelo.
+
+# 11. Correlaciones (posible multicolinealidad)
+
+```{r correlaciones}
+round(cor(estimacion %>% select(y:x8)), 2)
+```
+
+# 12. Base final
+
+```{r final}
+estimacion
+prediccion
+
+# Guardar las bases limpias
+write_csv(estimacion, "acciones_estimacion.csv")
+write_csv(prediccion, "acciones_prediccion.csv")
+```
