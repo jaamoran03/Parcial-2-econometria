@@ -1,0 +1,302 @@
+---
+title: "Parcial 02 - Preparación: Caso Acciones"
+author: "Tu nombre"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+# Carga de datos
+
+```{r datos}
+# Anexo 1: las 28 acciones con precio (base de estimación)
+anexo1 <- read.csv("CasoAccionesBD.csv", fileEncoding = "UTF-8-BOM", nrows = 28)
+
+# Anexo 2: las 5 acciones sin precio (base de predicción)
+anexo2 <- read.csv("CasoAccionesBD.csv", fileEncoding = "UTF-8-BOM", skip = 37)
+anexo2$X <- NULL
+anexo2$Nombre <- c("KIMBER A", "BIMBO A", "CEMEX", "TLEVISA CPO", "VITRO A")
+anexo2$Precio_actual <- c(29.56, 65.51, 23.02, 25.93, 14.28)
+
+str(anexo1)
+str(anexo2)
+summary(anexo1)
+```
+
+# Parte 1: Alcances de la solicitud
+
+## 1. Elementos relevantes para decidir la mejor inversión
+
+- Monto: un millón de pesos.
+- Objetivo: rendimientos apropiados con riesgos manejables.
+- Costo: comisión del 15 % para el Sr. Alcántara, que la inversión debe cubrir.
+- Plazo de la inversión.
+- Perfil del inversionista: no conoce el mercado, conviene un riesgo moderado.
+- Información financiera de las empresas: dividendos, ganancias, crecimiento y precio histórico.
+- Mercado donde cotizan las acciones (BMV).
+- Diversificación para reducir el riesgo.
+- Un modelo que prediga el precio de las acciones.
+
+## 2. Plazo recomendado
+
+Mediano plazo: alrededor de un año, revisando la cartera cada trimestre. El
+modelo usa datos financieros anuales (1992) para predecir el precio de abril de
+1993, así que sirve para meses, no para días. Además, hay que actualizarlo cuando
+las empresas publiquen nuevos resultados.
+
+## 3. Factores que determinan una buena inversión
+
+- Ganancias por acción (X2).
+- Dividendos (X1).
+- Crecimiento en ventas, ingresos netos y activos (X3, X4, X5).
+- Precio histórico de la acción (X6).
+- Mercado donde cotiza (X7).
+- Sector de la empresa (X8).
+- Riesgo o variabilidad del precio.
+- Entorno económico: tasas de interés, inflación y tipo de cambio.
+
+# Parte 2: El modelo de Oscar Aguilar
+
+## 4. Ecuación general del modelo
+
+$$Y = f(X_1, X_2, X_3, X_4, X_5, X_6, X_7, X_8)$$
+
+El precio de la acción depende de las 8 variables que identificó Oscar.
+
+## 5. Ecuación econométrica
+
+$$Y_i = \beta_0 + \beta_1X_{1i} + \beta_2X_{2i} + \beta_3X_{3i} + \beta_4X_{4i} + \beta_5X_{5i} + \beta_6X_{6i} + \beta_7X_{7i} + \beta_8X_{8i} + \varepsilon_i$$
+
+Es un modelo de regresión lineal múltiple: $\beta_0$ es el intercepto,
+$\beta_1, \dots, \beta_8$ son los coeficientes y $\varepsilon_i$ es el error.
+
+## 6. Variables independientes recomendadas
+
+Después de la selección de variables (ver pregunta 9) quedan tres:
+
+- **X1:** dividendo por acción en 1992.
+- **X2:** ganancias por acción en 1992.
+- **X6:** precio de cierre de la acción al 31/12/91.
+
+## 7. Puntos importantes para determinar el mejor modelo
+
+- Elegir variables con sentido económico.
+- Evitar la multicolinealidad.
+- Que el modelo sea significativo de forma global (prueba F).
+- Que cada variable sea significativa (prueba t).
+- Un R² ajustado alto y un error estándar bajo.
+- Que se cumplan los supuestos de los residuos: normalidad, independencia y varianza constante.
+- Revisar los datos atípicos.
+- Preferir el modelo más simple que explique bien.
+
+# Parte 3: Generación del modelo
+
+## 8. ¿Qué es un modelo de regresión múltiple?
+
+Es una ecuación que estima cómo cambia una variable (el precio de la acción)
+cuando cambian varias variables al mismo tiempo. Cada coeficiente indica cuánto
+cambia el precio cuando esa variable sube una unidad y las demás se mantienen
+iguales. Se calcula con mínimos cuadrados ordinarios, que buscan la ecuación con
+el menor error entre los precios reales y los estimados. Con ella se pueden
+predecir precios de acciones nuevas.
+
+## 9. Pasos del análisis
+
+1. Estimar el modelo completo con las 8 variables.
+2. Revisar R², R² ajustado y error estándar.
+3. Hacer la prueba F (validez global).
+4. Hacer las pruebas t y eliminar una a una las variables no significativas.
+5. Revisar las correlaciones (multicolinealidad).
+6. Revisar la normalidad de los residuos (histograma y Shapiro-Wilk).
+7. Revisar la independencia de los residuos (gráfico de dispersión y Durbin-Watson).
+8. Identificar las observaciones atípicas.
+9. Predecir las acciones del Anexo 2.
+
+**Paso 1: modelo completo**
+
+```{r modelo_completo}
+modelo_completo <- lm(Y ~ X1 + X2 + X3 + X4 + X5 + X6 + X7 + X8, data = anexo1)
+summary(modelo_completo)
+```
+
+**Paso 4: eliminación de variables no significativas** (se quita en cada paso
+la de mayor p-valor, hasta que todas tengan p < 0.10)
+
+```{r seleccion}
+m1 <- lm(Y ~ X1 + X2 + X3 + X4 + X6 + X7 + X8, data = anexo1)  # sale X5
+m2 <- lm(Y ~ X1 + X2 + X3 + X4 + X6 + X7, data = anexo1)       # sale X8
+m3 <- lm(Y ~ X1 + X2 + X4 + X6 + X7, data = anexo1)            # sale X3
+m4 <- lm(Y ~ X1 + X2 + X6 + X7, data = anexo1)                 # sale X4
+summary(m4)                                                     # X7 tiene p = 0.136, sale
+```
+
+## 10. Ecuación del modelo resultante
+
+```{r modelo_final}
+modelo <- lm(Y ~ X1 + X2 + X6, data = anexo1)
+summary(modelo)
+```
+
+$$\hat{Y} = -4.0091 - 8.2784X_1 + 4.5006X_2 + 1.4721X_6$$
+
+- **X1:** por cada peso más de dividendo, el precio baja 8.28 pesos. Con las
+  mismas ganancias, la empresa reinvierte menos.
+- **X2:** por cada peso más de ganancia por acción, el precio sube 4.50 pesos.
+- **X6:** por cada peso más en el precio anterior, el precio sube 1.47 pesos.
+
+# Parte 4: Comprensión del análisis
+
+## 11. Estadísticas básicas del modelo
+
+```{r basicas}
+resumen <- summary(modelo)
+resumen$r.squared       # R cuadrado
+resumen$adj.r.squared   # R cuadrado ajustado
+resumen$sigma           # Error estándar
+```
+
+| Estadística | Valor | Interpretación |
+|---|---|---|
+| R² | 0.7947 | El modelo explica el 79.5 % de la variación del precio |
+| R² ajustado | 0.7690 | Corrige por el número de variables; mejoró frente al modelo completo (0.7404) |
+| Error estándar | 8.22 | En promedio, la predicción se equivoca unos 8.22 pesos |
+
+## 12. Validez global del modelo (prueba F)
+
+```{r prueba_f}
+resumen$fstatistic
+pf(resumen$fstatistic[1], resumen$fstatistic[2], resumen$fstatistic[3],
+   lower.tail = FALSE)
+```
+
+1. $H_0: \beta_1 = \beta_2 = \beta_6 = 0$. $H_1$: al menos uno es distinto de 0.
+2. Nivel de significancia: $\alpha = 0.05$.
+3. F = 30.96, con 3 y 24 grados de libertad.
+4. p-valor ≈ 0.00000002.
+5. Como p < 0.05, **se rechaza $H_0$**: el modelo es válido globalmente.
+
+## 13. Validez individual de las variables (prueba t)
+
+```{r prueba_t}
+resumen$coefficients
+```
+
+1. $H_0: \beta_j = 0$ contra $H_1: \beta_j \neq 0$ para cada variable.
+2. Nivel de significancia: $\alpha = 0.10$.
+3. Resultados:
+    - X6: p ≈ 0.0000007, significativa.
+    - X2: p = 0.0225, significativa al 5 %.
+    - X1: p = 0.0588, significativa al 10 %.
+4. Se rechaza $H_0$ para las tres variables. X5, X8, X3, X4 y X7 se eliminaron
+   por no ser significativas.
+
+## 14. Correlación entre las variables independientes
+
+```{r correlaciones}
+round(cor(anexo1[, c("X1", "X2", "X6")]), 2)
+```
+
+Ninguna correlación entre las variables independientes pasa de 0.8 (la mayor es
+X2–X6 = 0.60). **No hay multicolinealidad.**
+
+## 15. Histograma de los residuos
+
+```{r histograma}
+residuos <- resid(modelo)
+hist(residuos, breaks = 10, col = "steelblue", border = "white",
+     main = "Histograma de los residuos", xlab = "Residuo (real - estimado)")
+shapiro.test(residuos)
+```
+
+Los residuos se concentran alrededor de 0, pero hay valores extremos: la acción
+5 a la derecha (residuo de +23) y las acciones 6 y 22 a la izquierda. La prueba
+de Shapiro-Wilk da p = 0.012 < 0.05, así que **los residuos no son normales**.
+La causa principal es la acción 5: su precio real es 91.25 y el modelo estima
+67.79.
+
+## 16. Gráfico de dispersión (independencia)
+
+```{r dispersion}
+plot(fitted(modelo), residuos, pch = 19, col = "steelblue",
+     main = "Residuos vs. valores estimados",
+     xlab = "Precio estimado", ylab = "Residuo")
+abline(h = 0, col = "red", lty = 2)
+text(fitted(modelo), residuos, anexo1$Accion, pos = 3, cex = 0.7)
+
+# Durbin-Watson (cerca de 2 = no hay autocorrelación)
+sum(diff(residuos)^2) / sum(residuos^2)
+
+# Breusch-Pagan (p < 0.05 = la varianza no es constante)
+aux <- lm(residuos^2 ~ X1 + X2 + X6, data = anexo1)
+pchisq(nrow(anexo1) * summary(aux)$r.squared, df = 3, lower.tail = FALSE)
+
+# Distancia de Cook (mayor que 1 = observación influyente)
+which(cooks.distance(modelo) > 1)
+```
+
+- **Independencia:** no hay un patrón y el Durbin-Watson es 2.52 (cercano a 2),
+  así que no hay autocorrelación.
+- **Varianza constante:** la prueba de Breusch-Pagan da p = 0.0001, así que se
+  rechaza la varianza constante.
+- **Causa:** la acción 5 es muy influyente (distancia de Cook de 4.8).
+
+## 17. Resultado general del análisis
+
+A partir de 28 acciones y 8 variables se obtuvo, por eliminación de variables no
+significativas, un modelo con dividendo por acción, ganancias por acción y precio
+del año anterior. El modelo es válido globalmente (F con p < 0.001) y cada
+variable es significativa. Explica el 79.5 % de la variación del precio, con un
+error estándar de 8.22 pesos. No hay multicolinealidad ni autocorrelación, pero
+los residuos no son normales ni tienen varianza constante por la acción 5, un
+dato atípico. El modelo sirve para predecir, pero con cautela.
+
+# Parte 5: Recomendación de inversión
+
+## 18. Características de las 5 acciones más rentables
+
+```{r anexo2}
+anexo2[, c("Nombre", "X1", "X2", "X3", "X4", "X5", "X6", "X7", "X8")]
+sapply(anexo1[, c("X1", "X2", "X6")], median)   # medianas del Anexo 1
+```
+
+- Todas cotizan en la BMV (X7 = 1).
+- Todas tienen un precio anterior (X6) mayor que la mediana de la muestra
+  (18.94), y X6 es la variable más importante del modelo.
+- Cuatro de cinco pagan dividendos mayores que la mediana (0.55); la excepción
+  es TLEVISA.
+- KIMBER, CEMEX y VITRO tienen altas ganancias por acción.
+- Casi todas crecieron en ventas e ingresos. BIMBO es la única con ventas a la
+  baja.
+
+## 19. Precio estimado con el modelo
+
+```{r prediccion}
+anexo2$Precio_modelo <- round(predict(modelo, newdata = anexo2), 2)
+anexo2$Diferencia    <- round(anexo2$Precio_modelo - anexo2$Precio_actual, 2)
+anexo2$Potencial_pct <- round(100 * anexo2$Diferencia / anexo2$Precio_actual, 1)
+
+anexo2[order(-anexo2$Potencial_pct),
+       c("Nombre", "Precio_actual", "Precio_modelo", "Diferencia", "Potencial_pct")]
+```
+
+- **Mayor precio estimado:** KIMBER A (63.65).
+- **Mayor potencial de ganancia:** VITRO A (+224 %).
+- **Única sobrevaluada:** BIMBO A (el modelo estima 18.68 y cuesta 65.51).
+
+## 20. Recomendación de inversión
+
+Invertir principalmente en **VITRO A** y **KIMBER A**, complementar con
+**CEMEX**, y **no invertir en BIMBO A**.
+
+- **VITRO A:** el mayor potencial de ganancia.
+- **KIMBER A:** el mayor precio estimado y las mayores ganancias por acción (4.52).
+- **BIMBO A:** está cara según el modelo y sus ventas bajaron.
+- **Diversificar** para reducir el riesgo.
+- **Plazo:** alrededor de un año.
+- **Tomar las predicciones como guía, no como garantía**, por el error del
+  modelo y la influencia de la acción 5.
