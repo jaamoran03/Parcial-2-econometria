@@ -13,18 +13,41 @@ knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
 
 # Carga de datos
 
-```{r datos}
-# Anexo 1: las 28 acciones con precio (base de estimación)
-anexo1 <- read.csv("CasoAccionesBD.csv", fileEncoding = "UTF-8-BOM", nrows = 28)
+```{r cargar_datos}
+datos <- read.csv("CasoAccionesBD.csv", fileEncoding = "UTF-8-BOM")
 
-# Anexo 2: las 5 acciones sin precio (base de predicción)
-anexo2 <- read.csv("CasoAccionesBD.csv", fileEncoding = "UTF-8-BOM", skip = 37)
-anexo2$X <- NULL
+dim(datos)
+str(datos)
+```
+
+El archivo tiene 42 filas porque trae dos tablas en la misma hoja: las 28
+acciones del Anexo 1 (con precio `Y`), 8 filas vacías, un encabezado repetido y
+las 5 acciones del Anexo 2 (sin `Y`). Por eso hay que separarlas.
+
+# Separar la base de estimación y la de predicción
+
+```{r separar_bases}
+fila_encabezado <- which(datos$Accion == "Accion")
+fila_encabezado
+
+estimacion <- datos[!is.na(datos$Y), ]   # las 28 acciones con Y
+prediccion <- datos[(fila_encabezado + 1):nrow(datos), names(datos) != "Y"]   # K, B, C, T, V sin Y
+
+# Convertir las X a número
+estimacion[, -1] <- lapply(estimacion[, -1], as.numeric)
+prediccion[, -1] <- lapply(prediccion[, -1], as.numeric)
+
+nrow(estimacion)
+nrow(prediccion)
+str(estimacion)
+str(prediccion)
+
+# Nombres que usan los siguientes chunks
+anexo1 <- estimacion
+anexo2 <- prediccion
 anexo2$Nombre <- c("KIMBER A", "BIMBO A", "CEMEX", "TLEVISA CPO", "VITRO A")
 anexo2$Precio_actual <- c(29.56, 65.51, 23.02, 25.93, 14.28)
 
-str(anexo1)
-str(anexo2)
 summary(anexo1)
 ```
 
